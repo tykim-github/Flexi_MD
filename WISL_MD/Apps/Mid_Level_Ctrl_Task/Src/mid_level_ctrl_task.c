@@ -3674,12 +3674,12 @@ static void Ent_Get_Loadcell()
 //	load_cell.offset=1.652;
 
 /////////////// ST01A/////////////////
-	//// RED ////////////////
-	load_cell.scale = -189.73;
-	load_cell.offset=1.414;
-	//// BLUE ////////////////
-//	load_cell.scale = -218;
-//	load_cell.offset=1.334;
+	//// RIGHT ////////////////
+	load_cell.scale =  195.38;
+	load_cell.offset=  1.0;
+	//// LEFT  ////////////////
+//	load_cell.scale =  210.21;
+//	load_cell.offset=  1.0;
 	load_cell.cutoff=50;
 }
 

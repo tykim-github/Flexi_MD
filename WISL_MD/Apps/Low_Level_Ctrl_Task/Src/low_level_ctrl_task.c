@@ -1300,7 +1300,7 @@ static void Set_Pole_Pair(MsgSDOargs* req, MsgSDOargs* res)
 static void Set_Enc_Resolution(MsgSDOargs* req, MsgSDOargs* res)
 {
 	memcpy(&inc25KhzObj.resolution, req->data, 4);
-	memcpy(&inc1KhzObj.resolution, req->data, 4);
+//	memcpy(&inc1KhzObj.resolution, req->data, 4);
 
     res->size = 0;
     res->status = DATA_OBJECT_SDO_SUCC;
