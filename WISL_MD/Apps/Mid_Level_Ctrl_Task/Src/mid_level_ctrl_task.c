@@ -700,7 +700,7 @@ static void StateOff_Run()
 	Ent_Get_Loadcell();
 	Ent_T2F();
 	inc1KhzObj.resolution = 16384;
-	velCtrl.Kp = 0.9;
+	velCtrl.Kp = 1.5;
 	velCtrl.Ki = 0;
 	velCtrl.Kd = 0;
 	ankle_comp.Jm = 0.003;
@@ -3675,11 +3675,16 @@ static void Ent_Get_Loadcell()
 
 /////////////// ST01A/////////////////
 	//// RIGHT ////////////////
-	load_cell.scale =  195.38;
-	load_cell.offset=  1.0;
+	if (MD_node_id == 6) {
+		load_cell.scale =  195.38;
+		load_cell.offset=  1.0;
+	}
 	//// LEFT  ////////////////
-//	load_cell.scale =  210.21;
-//	load_cell.offset=  1.0;
+	if (MD_node_id == 7) {
+		load_cell.scale =  210.21;
+		load_cell.offset=  1.0;
+	}
+
 	load_cell.cutoff=50;
 }
 

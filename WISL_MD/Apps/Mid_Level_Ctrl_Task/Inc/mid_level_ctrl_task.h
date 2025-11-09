@@ -400,6 +400,8 @@ extern uint32_t mid_level_loop_cnt;
 extern MidLevelState 	mid_level_state;
 
 extern uint8_t          mid_level_triggered_msg_stop;
+
+extern uint8_t           MD_node_id;
 /**
  *------------------------------------------------------------
  *                     FUNCTION PROTOTYPES
