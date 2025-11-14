@@ -31,6 +31,8 @@ float k_emf=0.15;
 float saturation;
 float vel_limit;
 
+float pMMG4_please;
+
 uint32_t                mid_level_loop_cnt;
 PIDObject 		        posCtrl;
 PIDObject 		        velCtrl;
@@ -68,6 +70,8 @@ uint16_t step = 0;
 float shift_test=0;
 static float gaitphase;
 static uint16_t* LCbuffer = {0};
+
+float pMMG_please;
 
 pMMGSense           pMMG_sense;
 ///////////////////////////////////////////////////////
@@ -455,7 +459,7 @@ void InitMidLvCtrl(void)
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_VEL_PID_CTRL_INPUT, 			e_Float32,  1, &velCtrl.control_input);
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_VSD_INPUT,					 	e_Float32, 	1, &VSD.control_input);
 
-	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_F_VECTOR_INPUT,	         	e_Float32,  1, &fvectorObj.input);
+
 
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_ABSENCODER1_POSITION,  		e_Float32,  1, &AbsObj1.posDeg);
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_ABSENCODER2_POSITION,  		e_Float32,  1, &AbsObj2.posDeg);
@@ -491,7 +495,8 @@ void InitMidLvCtrl(void)
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG1, 			         	e_Float32,  1, &pMMG_sense.pMMG1);
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG2, 			         	e_Float32,  1, &pMMG_sense.pMMG2);
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG3, 			         	e_Float32,  1, &pMMG_sense.pMMG3);
-	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG4, 			         	e_Float32,  1, &pMMG_sense.pMMG4);
+	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_F_VECTOR_INPUT,	         	e_Float32,  1, &pMMG_sense.pMMG4);
+	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG4, 			         	e_Float32,  1, &pMMG_please);
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	//Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_RISK,   		                e_UInt32,   1, &packed_risk);
@@ -3674,12 +3679,12 @@ static void Ent_Get_Loadcell()
 //	load_cell.offset=1.652;
 
 /////////////// ST01A/////////////////
-	//// RIGHT ////////////////
+	//// LEFT ////////////////
 	if (MD_node_id == 6) {
 		load_cell.scale =  195.38;
 		load_cell.offset=  1.0;
 	}
-	//// LEFT  ////////////////
+	//// RIGHT  ////////////////
 	if (MD_node_id == 7) {
 		load_cell.scale =  210.21;
 		load_cell.offset=  1.0;
