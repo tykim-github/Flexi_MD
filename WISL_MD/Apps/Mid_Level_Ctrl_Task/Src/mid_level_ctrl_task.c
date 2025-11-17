@@ -1904,8 +1904,8 @@ static int Run_Velocity_Ctrl()
 				  motor_in.mid_id_process_input +														 \
 				  posFF.control_input           + /*control input of position feed-forward controller */ \
 				  -posDOB.control_input;          /*control input of disturbance observer */
-	velCtrl.t_ref = velCtrl.ref - ankle_comp.control_input;
-	Run_PID_Control(&velCtrl, velCtrl.t_ref, mid_level_state.velocity_final, MID_LEVEL_CONTROL_PERIOD);
+//	velCtrl.t_ref = velCtrl.ref - ankle_comp.control_input;
+	Run_PID_Control(&velCtrl, velCtrl.ref, mid_level_state.velocity_final, MID_LEVEL_CONTROL_PERIOD);
 
 	return 0;
 }
@@ -3738,6 +3738,7 @@ static void T2F()
 	flexi_ankle.ratio_torque = flexi_ankle.ratio*2*M_PI/0.006;
 //	posCtrl.ref=flexi_ankle.ratio*posCtrl.total_t_ref;
 	posCtrl.ref=posCtrl.t_ref;
+	// TODO : Transform the torque reference to the force reference (=posCtrl.ref)
 }
 
 float Generate_Ref_Dorsi(float amp_p, float amp_t,float gc_i, float gc_p, float gc_t, uint16_t T_gait, uint32_t t_k, float t_T, int32_t t_phase_lead_index)

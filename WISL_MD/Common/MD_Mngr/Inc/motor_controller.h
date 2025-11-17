@@ -99,7 +99,7 @@ typedef struct _FCObject {
 
 typedef struct _PIDObject {
 
-	float t_ref; // torque reference
+	float t_ref; // for posCtrl, it is torque reference
 	float total_t_ref; //torque reference+impedance
     float ref;  // yd(k)
 	float ref1; // yd(k+1)
