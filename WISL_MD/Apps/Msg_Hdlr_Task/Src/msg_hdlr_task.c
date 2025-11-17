@@ -186,7 +186,7 @@ void InitMsgHdlr()
     TASK_CREATE_ROUTINE(&msg_hdlr_task,  ROUTINE_ID_MSG_WS5_PDO_PACK,       Init_Encoding_WS5_Dataset,   Run_Encoding_WS5_Dataset,      NULL);
 
     ////PCAN ///////
-//    Push_Routine(&msg_hdlr_task.routine, ROUTINE_ID_MSG_PDO_SEND);
+    Push_Routine(&msg_hdlr_task.routine, ROUTINE_ID_MSG_PDO_SEND);
     ////////////////
 	/* Data Object Definition */
     Create_DOD(TASK_ID_MSG);
@@ -258,6 +258,14 @@ static void StateOff_Ent()
 
 static void StateStandby_Ent()
 {
+	// pMMG PDO 수신 설정 (Flexi_XM에서 pMMG 데이터 요청)
+	if (comm_type == e_FDCAN) {
+		Add_PDO_to_Send(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG1);
+		Add_PDO_to_Send(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG2);
+		Add_PDO_to_Send(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG3);
+		Add_PDO_to_Send(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_F_VECTOR_INPUT);  // pMMG4
+	}
+
 	// PCAN 주석 제거
 //	if (comm_type == e_FDCAN) {
 //		Add_PDO_to_Send(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_LOOP_CNT);
@@ -293,10 +301,10 @@ static void StateStandby_Run()
 {
 
 	// PCAN 주석 제거
-//	if (comm_type == e_FDCAN) {
-//		Transition_State(&msg_hdlr_task.state_machine, e_State_Enable);
-//	}
-	///
+	if (comm_type == e_FDCAN) {
+		Transition_State(&msg_hdlr_task.state_machine, e_State_Enable);
+	}
+	//
 }
 
 static void StateStandby_Ext()

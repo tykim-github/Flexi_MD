@@ -31,7 +31,6 @@ float k_emf=0.15;
 float saturation;
 float vel_limit;
 
-float pMMG4_please;
 
 uint32_t                mid_level_loop_cnt;
 PIDObject 		        posCtrl;
@@ -71,7 +70,6 @@ float shift_test=0;
 static float gaitphase;
 static uint16_t* LCbuffer = {0};
 
-float pMMG_please;
 
 pMMGSense           pMMG_sense;
 ///////////////////////////////////////////////////////
@@ -350,6 +348,8 @@ static void T2F();
 float Generate_Ref_Dorsi(float amp_p, float amp_t,float gc_i, float gc_p, float gc_t, uint16_t T_gait, uint32_t t_k, float t_T, int32_t t_phase_lead_index);
 static int Ent_Ankle_Compensator();
 static int Run_Ankle_Compensator();
+static int Ent_Proportional_Assist();
+static int Run_Proportional_Assist();
 
 //////////////////////////////////////////////////////////////////////////////////////
 /**
@@ -439,6 +439,7 @@ void InitMidLvCtrl(void)
 	TASK_CREATE_ROUTINE(&mid_level_ctrl_task,  ROUTINE_ID_MIDLEVEL_POSITION_CTRL_ANKLE,				Ent_Position_Ctrl_Ankle,		 Run_Position_Ctrl_Ankle,			NULL);
 	TASK_CREATE_ROUTINE(&mid_level_ctrl_task,  ROUTINE_ID_MIDLEVEL_ANKLE_REF_PERIODIC,				Ent_Generate_Position_Ankle_Periodic,		 Run_Generate_Position_Ankle_Periodic,       Ext_Generate_Position_Ankle_Periodic);
 	TASK_CREATE_ROUTINE(&mid_level_ctrl_task,  ROUTINE_ID_MIDLEVEL_ANKLE_COMPENSATOR,				Ent_Ankle_Compensator,		 Run_Ankle_Compensator,       NULL);
+	TASK_CREATE_ROUTINE(&mid_level_ctrl_task,  ROUTINE_ID_MIDLEVEL_PROPORTIONAL_ASSIST,				Ent_Proportional_Assist,		 Run_Proportional_Assist,       NULL);
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -496,7 +497,6 @@ void InitMidLvCtrl(void)
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG2, 			         	e_Float32,  1, &pMMG_sense.pMMG2);
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG3, 			         	e_Float32,  1, &pMMG_sense.pMMG3);
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_F_VECTOR_INPUT,	         	e_Float32,  1, &pMMG_sense.pMMG4);
-	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG4, 			         	e_Float32,  1, &pMMG_please);
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	//Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_RISK,   		                e_UInt32,   1, &packed_risk);
@@ -700,12 +700,19 @@ static void StateOff_Run()
 	refAnk.gaitPeriod = 2000;
 	RISK_Flexi.max_ank_cnt = 0; RISK_Flexi.min_ank_cnt = 0; RISK_Flexi.max_error_cnt = 0;
 	RISK_Flexi.max_error = 10; RISK_Flexi.max_ank_ang = 90; RISK_Flexi.min_ank_ang = -90;
-	AbsObj1.offset = -22.7224998;
+
+	if (MD_node_id == 7) { // RIGHT
+		AbsObj1.offset = 143.5;
+	}
+	if (MD_node_id == 6) { // LEFT
+		AbsObj1.offset = 0.0;
+	}
+
 	posDOB.gain = 1;
 	Ent_Get_Loadcell();
 	Ent_T2F();
 	inc1KhzObj.resolution = 16384;
-	velCtrl.Kp = 1.5;
+	velCtrl.Kp = 0.9;
 	velCtrl.Ki = 0;
 	velCtrl.Kd = 0;
 	ankle_comp.Jm = 0.003;
@@ -3388,9 +3395,13 @@ static int Run_Disturbance_Obs()
 	posDOB.gq_in[0] = load_cell.loadcell_filtered; // force
 
 //	15Hz //
-//	posDOB.q_out[0] =+1.820114481352*posDOB.q_out[1]-0.82820418130686*posDOB.q_out[2]+0.40851323200391*posDOB.gq_in[0]-0.78566792918894*posDOB.gq_in[1]+0.37738188744651*posDOB.gq_in[2]-0.0080896999548105*posDOB.q_in[2];
-//  20Hz //
-	posDOB.q_out[0] =+1.7638227565964*posDOB.q_out[1]-0.77776767917179*posDOB.q_out[2]+0.70418994810164*posDOB.gq_in[0]-1.3543244500716*posDOB.gq_in[1]+0.65052612967238*posDOB.gq_in[2]-0.013944922575436*posDOB.q_in[2];
+	if (MD_node_id == 7){ // RIGHT
+		posDOB.q_out[0] =+1.820114481352*posDOB.q_out[1]-0.82820418130686*posDOB.q_out[2]+0.32817844327731*posDOB.gq_in[0]-0.60512870178618*posDOB.gq_in[1]+0.27717733359458*posDOB.gq_in[2]-0.0080896999548105*posDOB.q_in[2];
+	}
+	if (MD_node_id == 6){ // LEFT
+		posDOB.q_out[0] =+1.820114481352*posDOB.q_out[1]-0.82820418130686*posDOB.q_out[2]+0.32817844327731*posDOB.gq_in[0]-0.60512870178618*posDOB.gq_in[1]+0.27717733359458*posDOB.gq_in[2]-0.0080896999548105*posDOB.q_in[2];
+
+	}
 
 	posDOB.disturbance = posDOB.gain*posDOB.q_out[0];
 	posDOB.control_input = +posDOB.disturbance;
@@ -3439,7 +3450,7 @@ static int Run_Feedforward_Filter()
 	//vel ctrl
 
 //	posFF.control_input = +54.131464031295*posFF.in[0]-104.01954010138*posFF.in[1]+49.917050486966*posFF.in[2];
-	posFF.control_input = +50.497946065477*posFF.in[0]-97.119538867662*posFF.in[1]+46.649676694388*posFF.in[2];
+	posFF.control_input = +40.567443182137*posFF.in[0]-74.802366610191*posFF.in[1]+34.26299308292*posFF.in[2];
 	posFF.out[0] = posFF.control_input;
 	/* Array Shifting */
 	for(int i = 2; i > 0; --i){
@@ -3829,5 +3840,19 @@ static int Run_Ankle_Compensator()
 	ankle_comp.theta_dot_prev = ankle_comp.theta_dot_final;
 
 	ankle_comp.control_input = ankle_comp.gain * (0.1 * ankle_comp.alpha * ankle_comp.theta_ddot_final + ankle_comp.beta * ankle_comp.theta_dot_final) * flexi_ankle.ratio_torque;
+	return 0;
+}
+
+static int Ent_Proportional_Assist()
+{
+	posCtrl.err = 0;
+	posCtrl.err_sum = 0;
+	posCtrl.err_diff = 0;
+}
+
+static int Run_Proportional_Assist()
+{
+	posCtrl.ref = 0;
+	Run_PID_Control(&posCtrl, posCtrl.ref, load_cell.loadcell_filtered, MID_LEVEL_CONTROL_PERIOD);
 	return 0;
 }
