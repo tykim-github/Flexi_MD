@@ -317,6 +317,20 @@ typedef struct _ImpedanceCtrl {
 
 } ImpedanceCtrl;
 
+typedef struct _ProportionalCtrl {
+
+	float error;
+	float K_torque;
+	float max_torque;
+	float torque_ref;
+	float force_ref;
+
+	float power_PF;
+	float power_DF;
+
+
+} ProportionalCtrl;
+
 typedef struct _WIDM_GaitData {
 	float gaitPhase;			// Current Gait Phase 0 ~ 100%
 	float gaitPhasePre;			// Previous Gait Phase

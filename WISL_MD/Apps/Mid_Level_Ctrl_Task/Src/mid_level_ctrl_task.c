@@ -38,6 +38,7 @@ PIDObject 		        velCtrl;
 PIDObject 		        forceCtrl;
 ImpedanceReductionCtrl 	IRC;
 ImpedanceCtrl           impedanceCtrl;
+ProportionalCtrl		proportionalCtrl;
 DOBObject	            posDOB;
 FFObject	            posFF;
 FCObject                FrictionCompObj;
@@ -320,6 +321,7 @@ static void Set_Risk_Param(MsgSDOargs* t_req, MsgSDOargs* t_res);
 static void Set_Init_Torque();
 static void Set_Phase_Shift(MsgSDOargs* t_req, MsgSDOargs* t_res);
 static void Set_ImpedanceCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res);
+static void Set_ProportionalCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res);
 ////////////////////////////////////////////////////////////////
 static int Ent_Linearize_Stiffness();
 static int Run_Linearize_Stiffness();
@@ -601,6 +603,7 @@ void InitMidLvCtrl(void)
 	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_INIT_TORQUE,		e_Float32, 	Set_Init_Torque);
 	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_PHASE_SHIFT,		e_Float32, 	Set_Phase_Shift);
 	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_IMPEDANCECTRL_INFO,		e_Float32, 	Set_ImpedanceCtrl_Info);
+	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_PROPORTIONALCTRL_INFO,		e_Float32, 	Set_ProportionalCtrl_Info);
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	/* Timer 7 Callback Allocation */
@@ -696,7 +699,7 @@ static void StateOff_Run()
 	Transition_State(&mid_level_ctrl_task.state_machine, e_State_Standby);
 	IOIF_InitIncEnc(IOIF_TIM5, IOIF_TIM_CHANNEL_ALL , &inc25KhzObj);
 	Init_Position_Velocity();
-	posCtrl.Kp = 0.5; posCtrl.Kd = 1.5; posCtrl.Ki=0;
+	posCtrl.Kp = 0; posCtrl.Kd = 0; posCtrl.Ki=0;
 	refAnk.gaitPeriod = 2000;
 	RISK_Flexi.max_ank_cnt = 0; RISK_Flexi.min_ank_cnt = 0; RISK_Flexi.max_error_cnt = 0;
 	RISK_Flexi.max_error = 10; RISK_Flexi.max_ank_ang = 90; RISK_Flexi.min_ank_ang = -90;
@@ -3325,6 +3328,17 @@ static void Set_ImpedanceCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res)
 	   t_res->size = 0;
 	   t_res->status = DATA_OBJECT_SDO_SUCC;
 }
+
+static void Set_ProportionalCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res)
+{
+	memcpy(&proportionalCtrl.K_torque, 			((float*)t_req->data), 4);
+	memcpy(&proportionalCtrl.max_torque, 		((float*)t_req->data)+1, 4);
+	memcpy(&proportionalCtrl.power_PF, 			((float*)t_req->data)+2, 4);
+	memcpy(&proportionalCtrl.power_DF, 			((float*)t_req->data)+3, 4);
+
+	   t_res->size = 0;
+	   t_res->status = DATA_OBJECT_SDO_SUCC;
+}
 /********************************Routine****************************************/
 static int Ent_Position_Ctrl()
 {
@@ -3849,11 +3863,14 @@ static int Ent_Proportional_Assist()
 	posCtrl.err = 0;
 	posCtrl.err_sum = 0;
 	posCtrl.err_diff = 0;
+
 }
 
 static int Run_Proportional_Assist()
 {
-	posCtrl.ref = 0;
-	Run_PID_Control(&posCtrl, posCtrl.ref, load_cell.loadcell_filtered, MID_LEVEL_CONTROL_PERIOD);
+	proportionalCtrl.torque_ref = proportionalCtrl.K_torque * pow((pMMG_sense.pMMG3 - 102), proportionalCtrl.power_PF);
+	proportionalCtrl.force_ref  = proportionalCtrl.torque_ref * flexi_ankle.ratio_inv;
+
+	posCtrl.t_ref = proportionalCtrl.force_ref;
 	return 0;
 }
