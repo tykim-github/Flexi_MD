@@ -328,6 +328,8 @@ typedef struct _ProportionalCtrl {
 	float power_PF;
 	float power_DF;
 
+	float pmmg_pf;
+	float pmmg_df;
 
 } ProportionalCtrl;
 

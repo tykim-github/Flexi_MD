@@ -706,9 +706,11 @@ static void StateOff_Run()
 
 	if (MD_node_id == 7) { // RIGHT
 		AbsObj1.offset = 143.5;
+		AbsObj1.sign = 1;   // RIGHT: positive sign
 	}
 	if (MD_node_id == 6) { // LEFT
-		AbsObj1.offset = 0.0;
+		AbsObj1.offset = -25.271;
+		AbsObj1.sign = -1;  // LEFT: negative sign (symmetric mounting)
 	}
 
 	posDOB.gain = 1;
@@ -3868,7 +3870,16 @@ static int Ent_Proportional_Assist()
 
 static int Run_Proportional_Assist()
 {
-	proportionalCtrl.torque_ref = proportionalCtrl.K_torque * pow((pMMG_sense.pMMG3 - 102), proportionalCtrl.power_PF);
+	if (MD_node_id == 6){ // LEFT
+		proportionalCtrl.pmmg_pf = pMMG_sense.pMMG1;
+		proportionalCtrl.pmmg_df = pMMG_sense.pMMG2;
+	}
+	if (MD_node_id == 7){ // RIGHT
+			proportionalCtrl.pmmg_pf = pMMG_sense.pMMG3;
+			proportionalCtrl.pmmg_df = pMMG_sense.pMMG4;
+	}
+
+	proportionalCtrl.torque_ref = proportionalCtrl.K_torque * pow((proportionalCtrl.pmmg_pf - 102), proportionalCtrl.power_PF);
 	proportionalCtrl.force_ref  = proportionalCtrl.torque_ref * flexi_ankle.ratio_inv;
 
 	posCtrl.t_ref = proportionalCtrl.force_ref;
