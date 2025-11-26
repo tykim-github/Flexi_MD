@@ -262,7 +262,7 @@ void InitLowLvCtrl(void)
 	if (motor_properties.md_version == e_R08H)
 		Init_Kalman_Filter(&kf_current_object, kf_current_object.kf_A, kf_current_object.kf_B, kf_current_object.kf_C, 0.1, 10, 1); // high power MD
 	else
-		Init_Kalman_Filter(&kf_current_object, kf_current_object.kf_A, kf_current_object.kf_B, kf_current_object.kf_C, 1, 10, 1);	// A, B, C, Q, R, P (Q = 1, R = 10)
+		Init_Kalman_Filter(&kf_current_object, kf_current_object.kf_A, kf_current_object.kf_B, kf_current_object.kf_C, 1, 1, 1);	// A, B, C, Q, R, P (Q = 1, R = 10)
 
 	//Init_Kalman_Filter(&kf_current_object, kf_current_object.kf_A, kf_current_object.kf_B, 48.323, 1, 10, 1);	// A, B, C, Q, R, P (Q = 1, R = 10)
 

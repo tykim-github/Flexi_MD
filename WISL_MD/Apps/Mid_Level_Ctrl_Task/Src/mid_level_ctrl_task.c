@@ -38,7 +38,7 @@ PIDObject 		        velCtrl;
 PIDObject 		        forceCtrl;
 ImpedanceReductionCtrl 	IRC;
 ImpedanceCtrl           impedanceCtrl;
-ProportionalCtrl		proportionalCtrl;
+SAANCtrl				saanCtrl;
 DOBObject	            posDOB;
 FFObject	            posFF;
 FCObject                FrictionCompObj;
@@ -321,7 +321,10 @@ static void Set_Risk_Param(MsgSDOargs* t_req, MsgSDOargs* t_res);
 static void Set_Init_Torque();
 static void Set_Phase_Shift(MsgSDOargs* t_req, MsgSDOargs* t_res);
 static void Set_ImpedanceCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res);
-static void Set_ProportionalCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res);
+static void Set_SAANCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res);
+static void Set_Calibration_params_DF(MsgSDOargs* t_req, MsgSDOargs* t_res);
+static void Set_Calibration_params_PF(MsgSDOargs* t_req, MsgSDOargs* t_res);
+
 ////////////////////////////////////////////////////////////////
 static int Ent_Linearize_Stiffness();
 static int Run_Linearize_Stiffness();
@@ -492,7 +495,7 @@ void InitMidLvCtrl(void)
 	Create_PDO(TASK_ID_WIDM,	 PDO_ID_WIDM_GAIT_PHASE, 	 	 				e_Float32,  1, &widmGaitDataObj2.gaitPhase);
 	Create_PDO(TASK_ID_WIDM,	 PDO_ID_WIDM_GAIT_PERIOD, 	 	 				e_UInt16,   1, &widmGaitDataObj2.gaitPeriod);
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_REF_IMPEDANCE, 				e_Float32,  1, &impedanceCtrl.ref);
-	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_AC_CTRL_INPUT, 				e_Float32,  1, &ankle_comp.control_input);
+	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_GAMMA, 						e_Float32,  1, &saanCtrl.gamma);
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_LOADCELL_TORQUE, 				e_Float32,  1, &load_cell.torque);
 
 	Create_PDO(TASK_ID_MIDLEVEL, PDO_ID_MIDLEVEL_PMMG1, 			         	e_Float32,  1, &pMMG_sense.pMMG1);
@@ -603,7 +606,10 @@ void InitMidLvCtrl(void)
 	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_INIT_TORQUE,		e_Float32, 	Set_Init_Torque);
 	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_PHASE_SHIFT,		e_Float32, 	Set_Phase_Shift);
 	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_IMPEDANCECTRL_INFO,		e_Float32, 	Set_ImpedanceCtrl_Info);
-	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_PROPORTIONALCTRL_INFO,		e_Float32, 	Set_ProportionalCtrl_Info);
+	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_SAANCTRL_INFO,				e_Float32, 	Set_SAANCtrl_Info);
+	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_CALIBRATION_PARAMS_PART1,	e_Float32, 	Set_Calibration_params_DF);
+	Create_SDO(TASK_ID_MIDLEVEL, SDO_ID_MIDLEVEL_CALIBRATION_PARAMS_PART2,	e_Float32, 	Set_Calibration_params_PF);
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	/* Timer 7 Callback Allocation */
@@ -720,13 +726,19 @@ static void StateOff_Run()
 	velCtrl.Kp = 0.9;
 	velCtrl.Ki = 0;
 	velCtrl.Kd = 0;
+
 	ankle_comp.Jm = 0.003;
 	ankle_comp.Bm = 0.2;
-	ankle_comp.Kp=0.0378;
-	ankle_comp.alpha = ankle_comp.Jm/ankle_comp.Kp;
-	ankle_comp.beta = 1 + ankle_comp.Bm/ankle_comp.Kp;
-	ankle_comp.gain = 0.1;
-	ankle_comp.cutoff = 6;
+	ankle_comp.Kp = 1.5;
+//	ankle_comp.alpha = ankle_comp.Jm/ankle_comp.Kp;
+//	ankle_comp.alpha = 0.002;
+	ankle_comp.alpha = 0.0001;
+//	ankle_comp.beta = 1 + ankle_comp.Bm/ankle_comp.Kp;
+//	ankle_comp.beta = 1.133;
+	ankle_comp.beta = 1.01;
+
+	ankle_comp.gain = 0.02;
+	ankle_comp.cutoff = 15;
 }
 
 static void StateStandby_Ent( )
@@ -749,11 +761,13 @@ static void StateStandby_Ent( )
 
 	if (isnan(mid_level_state.position_offset))
 		mid_level_state.position_offset = 0;
-	////////////////////////////////////	 Flexi-SEA 		 ////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-	////////////////////////////////////////////////////////////////////////////////////////////
+	// Initialize stiffness control parameters
+	saanCtrl.theta_dot_lpf_alpha = 0.214f;  // 60Hz cutoff at 1kHz sampling
+	saanCtrl.theta_prev = AbsObj1.posDeg;
+	saanCtrl.theta_dot_filtered = 0.0f;
+	saanCtrl.theta_init = AbsObj1.posDeg;
+	saanCtrl.gamma_above_threshold = 0;
 
 }
 
@@ -1908,7 +1922,8 @@ static int Run_Velocity_Ctrl()
 	velCtrl.ref = posCtrl.control_input         + /*control input of PID position controller */          \
 				  motor_in.mid_id_process_input +														 \
 				  posFF.control_input           + /*control input of position feed-forward controller */ \
-				  -posDOB.control_input;          /*control input of disturbance observer */
+				  -posDOB.control_input; //         +  /*control input of disturbance observer */ 			 \
+				  ankle_comp.control_input;
 //	velCtrl.t_ref = velCtrl.ref - ankle_comp.control_input;
 	Run_PID_Control(&velCtrl, velCtrl.ref, mid_level_state.velocity_final, MID_LEVEL_CONTROL_PERIOD);
 
@@ -3331,12 +3346,49 @@ static void Set_ImpedanceCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res)
 	   t_res->status = DATA_OBJECT_SDO_SUCC;
 }
 
-static void Set_ProportionalCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res)
+static void Set_SAANCtrl_Info(MsgSDOargs* t_req, MsgSDOargs* t_res)
 {
-	memcpy(&proportionalCtrl.K_torque, 			((float*)t_req->data), 4);
-	memcpy(&proportionalCtrl.max_torque, 		((float*)t_req->data)+1, 4);
-	memcpy(&proportionalCtrl.power_PF, 			((float*)t_req->data)+2, 4);
-	memcpy(&proportionalCtrl.power_DF, 			((float*)t_req->data)+3, 4);
+	memcpy(&saanCtrl.K_PF, 				((float*)t_req->data), 4);
+	memcpy(&saanCtrl.K_DF, 				((float*)t_req->data)+1, 4);
+	memcpy(&saanCtrl.power_PF, 			((float*)t_req->data)+2, 4);
+	memcpy(&saanCtrl.power_DF, 			((float*)t_req->data)+3, 4);
+	memcpy(&saanCtrl.offset_PF, 		((float*)t_req->data)+4, 4);
+	memcpy(&saanCtrl.offset_DF, 		((float*)t_req->data)+5, 4);
+	memcpy(&saanCtrl.torque_limit, 		((float*)t_req->data)+6, 4);
+	memcpy(&saanCtrl.K_stiff, 			((float*)t_req->data)+7, 4);
+	memcpy(&saanCtrl.D_stiff, 			((float*)t_req->data)+8, 4);
+	memcpy(&saanCtrl.gamma_start_threshold, 	((float*)t_req->data)+9, 4);
+	memcpy(&saanCtrl.gamma_stop_threshold, 	((float*)t_req->data)+10, 4);
+
+	   t_res->size = 0;
+	   t_res->status = DATA_OBJECT_SDO_SUCC;
+}
+
+static void Set_Calibration_params_DF(MsgSDOargs* t_req, MsgSDOargs* t_res)
+{
+	memcpy(&saanCtrl.a_rest_DF, 		((float*)t_req->data), 4);
+	memcpy(&saanCtrl.b_rest_DF, 		((float*)t_req->data)+1, 4);
+	memcpy(&saanCtrl.c_rest_DF, 		((float*)t_req->data)+2, 4);
+	memcpy(&saanCtrl.d_rest_DF, 		((float*)t_req->data)+3, 4);
+	memcpy(&saanCtrl.a_cont_DF, 		((float*)t_req->data)+4, 4);
+	memcpy(&saanCtrl.b_cont_DF, 		((float*)t_req->data)+5, 4);
+	memcpy(&saanCtrl.c_cont_DF, 		((float*)t_req->data)+6, 4);
+	memcpy(&saanCtrl.d_cont_DF, 		((float*)t_req->data)+7, 4);
+
+	   t_res->size = 0;
+	   t_res->status = DATA_OBJECT_SDO_SUCC;
+}
+
+static void Set_Calibration_params_PF(MsgSDOargs* t_req, MsgSDOargs* t_res)
+{
+	memcpy(&saanCtrl.a_rest_PF, 		((float*)t_req->data), 4);
+	memcpy(&saanCtrl.b_rest_PF, 		((float*)t_req->data)+1, 4);
+	memcpy(&saanCtrl.c_rest_PF, 		((float*)t_req->data)+2, 4);
+	memcpy(&saanCtrl.d_rest_PF, 		((float*)t_req->data)+3, 4);
+	memcpy(&saanCtrl.a_cont_PF, 		((float*)t_req->data)+4, 4);
+	memcpy(&saanCtrl.b_cont_PF, 		((float*)t_req->data)+5, 4);
+	memcpy(&saanCtrl.c_cont_PF, 		((float*)t_req->data)+6, 4);
+	memcpy(&saanCtrl.d_cont_PF, 		((float*)t_req->data)+7, 4);
 
 	   t_res->size = 0;
 	   t_res->status = DATA_OBJECT_SDO_SUCC;
@@ -3411,12 +3463,18 @@ static int Run_Disturbance_Obs()
 	posDOB.gq_in[0] = load_cell.loadcell_filtered; // force
 
 //	15Hz //
+//	if (MD_node_id == 7){ // RIGHT
+//		posDOB.q_out[0] =+1.820114481352*posDOB.q_out[1]-0.82820418130686*posDOB.q_out[2]+0.32817844327731*posDOB.gq_in[0]-0.60512870178618*posDOB.gq_in[1]+0.27717733359458*posDOB.gq_in[2]-0.0080896999548105*posDOB.q_in[2];
+//	}
+//	if (MD_node_id == 6){ // LEFT
+//		posDOB.q_out[0] =+1.820114481352*posDOB.q_out[1]-0.82820418130686*posDOB.q_out[2]+0.32817844327731*posDOB.gq_in[0]-0.60512870178618*posDOB.gq_in[1]+0.27717733359458*posDOB.gq_in[2]-0.0080896999548105*posDOB.q_in[2];
+//	}
+//	20Hz //
 	if (MD_node_id == 7){ // RIGHT
-		posDOB.q_out[0] =+1.820114481352*posDOB.q_out[1]-0.82820418130686*posDOB.q_out[2]+0.32817844327731*posDOB.gq_in[0]-0.60512870178618*posDOB.gq_in[1]+0.27717733359458*posDOB.gq_in[2]-0.0080896999548105*posDOB.q_in[2];
+		posDOB.q_out[0] =+1.7638227565964*posDOB.q_out[1]-0.77776767917179*posDOB.q_out[2]+0.71306240292278*posDOB.gq_in[0]-1.3542555169156*posDOB.gq_in[1]+0.64150625732392*posDOB.gq_in[2]-0.013944922575436*posDOB.q_in[2];
 	}
 	if (MD_node_id == 6){ // LEFT
-		posDOB.q_out[0] =+1.820114481352*posDOB.q_out[1]-0.82820418130686*posDOB.q_out[2]+0.32817844327731*posDOB.gq_in[0]-0.60512870178618*posDOB.gq_in[1]+0.27717733359458*posDOB.gq_in[2]-0.0080896999548105*posDOB.q_in[2];
-
+		posDOB.q_out[0] =+1.7638227565964*posDOB.q_out[1]-0.77776767917179*posDOB.q_out[2]+0.71306240292278*posDOB.gq_in[0]-1.3542555169156*posDOB.gq_in[1]+0.64150625732392*posDOB.gq_in[2]-0.013944922575436*posDOB.q_in[2];
 	}
 
 	posDOB.disturbance = posDOB.gain*posDOB.q_out[0];
@@ -3466,7 +3524,7 @@ static int Run_Feedforward_Filter()
 	//vel ctrl
 
 //	posFF.control_input = +54.131464031295*posFF.in[0]-104.01954010138*posFF.in[1]+49.917050486966*posFF.in[2];
-	posFF.control_input = +40.567443182137*posFF.in[0]-74.802366610191*posFF.in[1]+34.26299308292*posFF.in[2];
+	posFF.control_input = +51.134195910045*posFF.in[0]-97.11459562358*posFF.in[1]+46.002855437428*posFF.in[2];
 	posFF.out[0] = posFF.control_input;
 	/* Array Shifting */
 	for(int i = 2; i > 0; --i){
@@ -3753,8 +3811,9 @@ static void T2F()
 	flexi_ankle.ratio_inv = 1/flexi_ankle.ratio;
 	flexi_ankle.ratio_torque = flexi_ankle.ratio*2*M_PI/0.006;
 //	posCtrl.ref=flexi_ankle.ratio*posCtrl.total_t_ref;
-	posCtrl.ref=posCtrl.t_ref;
-	// TODO : Transform the torque reference to the force reference (=posCtrl.ref)
+
+	posCtrl.ref = flexi_ankle.ratio_inv * posCtrl.t_ref;
+
 }
 
 float Generate_Ref_Dorsi(float amp_p, float amp_t,float gc_i, float gc_p, float gc_t, uint16_t T_gait, uint32_t t_k, float t_T, int32_t t_phase_lead_index)
@@ -3856,32 +3915,151 @@ static int Run_Ankle_Compensator()
 	ankle_comp.theta_prev = ankle_comp.theta;
 	ankle_comp.theta_dot_prev = ankle_comp.theta_dot_final;
 
-	ankle_comp.control_input = ankle_comp.gain * (0.1 * ankle_comp.alpha * ankle_comp.theta_ddot_final + ankle_comp.beta * ankle_comp.theta_dot_final) * flexi_ankle.ratio_torque;
+	ankle_comp.control_input = ankle_comp.gain * (ankle_comp.alpha * ankle_comp.theta_ddot_final + ankle_comp.beta * ankle_comp.theta_dot_final) * flexi_ankle.ratio_torque;
 	return 0;
 }
 
 static int Ent_Proportional_Assist()
 {
-	posCtrl.err = 0;
-	posCtrl.err_sum = 0;
-	posCtrl.err_diff = 0;
+	posCtrl.ref = 0.0f;
+	posCtrl.err = 0.0f;
+	posCtrl.err_sum = 0.0f;
+	posCtrl.err_diff = 0.0f;
+
+	saanCtrl.gamma = 0.0f;
+	saanCtrl.torque_ref = 0.0f;
 
 }
 
 static int Run_Proportional_Assist()
 {
 	if (MD_node_id == 6){ // LEFT
-		proportionalCtrl.pmmg_pf = pMMG_sense.pMMG1;
-		proportionalCtrl.pmmg_df = pMMG_sense.pMMG2;
+		saanCtrl.pmmg_PF = pMMG_sense.pMMG1;
+		saanCtrl.pmmg_DF = pMMG_sense.pMMG2;
 	}
 	if (MD_node_id == 7){ // RIGHT
-			proportionalCtrl.pmmg_pf = pMMG_sense.pMMG3;
-			proportionalCtrl.pmmg_df = pMMG_sense.pMMG4;
+		saanCtrl.pmmg_PF = pMMG_sense.pMMG3;
+		saanCtrl.pmmg_DF = pMMG_sense.pMMG4;
 	}
 
-	proportionalCtrl.torque_ref = proportionalCtrl.K_torque * pow((proportionalCtrl.pmmg_pf - 102), proportionalCtrl.power_PF);
-	proportionalCtrl.force_ref  = proportionalCtrl.torque_ref * flexi_ankle.ratio_inv;
 
-	posCtrl.t_ref = proportionalCtrl.force_ref;
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////// STIFFNESS    CONTROL ////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	float theta = AbsObj1.posDeg;
+	
+	// Calculate theta_dot using 1st order LPF with 60Hz cutoff (sampling 1000Hz)
+	// LPF coefficient: alpha = 2*pi*fc*dt / (2*pi*fc*dt + 1) = 2*pi*60*0.001 / (2*pi*60*0.001 + 1) ≈ 0.274
+	float theta_dot = 0.0f;
+	if (saanCtrl.theta_dot_lpf_alpha > 0) {
+		float theta_dot_raw = (theta - saanCtrl.theta_prev) * 1000;  // Raw derivative
+		saanCtrl.theta_dot_filtered = saanCtrl.theta_dot_lpf_alpha * theta_dot_raw +
+		                               (1.0f - saanCtrl.theta_dot_lpf_alpha) * saanCtrl.theta_dot_filtered;
+		theta_dot = saanCtrl.theta_dot_filtered;
+	}
+	saanCtrl.theta_prev = theta;
+	
+	// Update theta_init based on gamma threshold
+	if (saanCtrl.gamma >= saanCtrl.gamma_start_threshold) {
+		if (!saanCtrl.gamma_above_threshold) {
+			// Rising edge: gamma crossed threshold from below
+			saanCtrl.theta_init = theta;
+			saanCtrl.gamma_above_threshold = 1;
+		}
+		// gamma remains above threshold, keep theta_init
+	}
+	if (saanCtrl.gamma <= saanCtrl.gamma_stop_threshold) {
+		if (saanCtrl.gamma_above_threshold) {
+			// Falling edge: gamma crossed threshold from above
+			saanCtrl.gamma_above_threshold = 0;
+			// theta_init will be reset on next rising edge
+		}
+	}
+	
+	float relx_pf = saanCtrl.a_rest_PF * exp(saanCtrl.b_rest_PF * theta) +
+	                 saanCtrl.c_rest_PF * exp(saanCtrl.d_rest_PF * theta);
+	float mvic_pf = saanCtrl.a_cont_PF * exp(-((theta - saanCtrl.b_cont_PF) * (theta - saanCtrl.b_cont_PF)) /
+	                 (2.0f * saanCtrl.c_cont_PF * saanCtrl.c_cont_PF)) + saanCtrl.d_cont_PF;
+	
+	float alpha_pf = 0.0f;
+	if ((mvic_pf - relx_pf) != 0) {
+		alpha_pf = (saanCtrl.pmmg_PF - relx_pf) / (mvic_pf - relx_pf);
+		// Clamp alpha to [0, 1]
+		if (alpha_pf < 0) alpha_pf = 0;
+		if (alpha_pf > 1) alpha_pf = 1;
+	}
+	
+	float relx_df = saanCtrl.a_rest_DF * exp(saanCtrl.b_rest_DF * theta) +
+	                 saanCtrl.c_rest_DF * exp(saanCtrl.d_rest_DF * theta);
+	float mvic_df = saanCtrl.a_cont_DF * exp(-((theta - saanCtrl.b_cont_DF) * (theta - saanCtrl.b_cont_DF)) /
+	                 (2.0f * saanCtrl.c_cont_DF * saanCtrl.c_cont_DF)) + saanCtrl.d_cont_DF;
+	
+	float alpha_df = 0.0f;
+	if ((mvic_df - relx_df) != 0) {
+		alpha_df = (saanCtrl.pmmg_DF - relx_df) / (mvic_df - relx_df);
+		// Clamp alpha to [0, 1]
+		if (alpha_df < 0) alpha_df = 0;
+		if (alpha_df > 1) alpha_df = 1;
+	}
+	
+	// Rudolph gamma calculation (using alpha_pf and alpha_df directly)
+	float gamma_rudolph = 0.0f;
+	float min_val = (alpha_pf < alpha_df) ? alpha_pf : alpha_df;
+	float max_val = (alpha_pf > alpha_df) ? alpha_pf : alpha_df;
+	
+	if (max_val > 0) {
+		gamma_rudolph = 0.5f * min_val / max_val * (alpha_pf + alpha_df);
+	}
+	
+	// Sine wave modulation parameters
+	float delta = 0.75f;
+	float k_amplitude = 0.25f;
+	
+	// Dead Zone normalization variable L
+	float L = (alpha_pf - alpha_df + delta) / (2.0f * delta);
+	
+	// Sine wave calculation (only within dead zone [0, 1])
+	float w_sine = 0.0f;
+	if (L >= 0.0f && L <= 1.0f) {
+		float Theta = 2.0f * 3.14159265f * L - (3.14159265f / 2.0f);
+		float sin_val = sinf(Theta);
+		w_sine = k_amplitude * (sin_val + 1.0f) * (sin_val + 1.0f);
+	}
+	
+	// Combined gamma (Rudolph * Sinewave)
+	saanCtrl.gamma = gamma_rudolph * w_sine;
+	
+	// Clamp to [0, 1]
+	if (saanCtrl.gamma > 1.0f) saanCtrl.gamma = 1.0f;
+	if (saanCtrl.gamma < 0.0f) saanCtrl.gamma = 0.0f;
+
+	saanCtrl.torque_stiffness = saanCtrl.K_stiff * (saanCtrl.theta_init - theta) - saanCtrl.D_stiff * theta_dot;
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////// PROPORTIONAL CONTROL ////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	float pmmg_PF_adj = (saanCtrl.pmmg_PF - relx_pf) > 0 ? (saanCtrl.pmmg_PF - relx_pf) : 0;
+	float pmmg_DF_adj = (saanCtrl.pmmg_DF - relx_df) > 0 ? (saanCtrl.pmmg_DF - relx_df) : 0;
+	
+	saanCtrl.torque_proportional = saanCtrl.K_PF * pow(pmmg_PF_adj, saanCtrl.power_PF) \
+								 - saanCtrl.K_DF * pow(pmmg_DF_adj, saanCtrl.power_DF);
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+	// TORQUE REFERENCE SUM AND LIMIT
+	saanCtrl.torque_ref = saanCtrl.gamma * saanCtrl.torque_stiffness + (1-saanCtrl.gamma) * saanCtrl.torque_proportional;
+
+	if (saanCtrl.torque_ref > saanCtrl.torque_limit) {
+		saanCtrl.torque_ref = saanCtrl.torque_limit;
+	}
+	if (saanCtrl.torque_ref < -saanCtrl.torque_limit) {
+			saanCtrl.torque_ref = -saanCtrl.torque_limit;
+	}
+
+	posCtrl.t_ref = saanCtrl.torque_ref;
 	return 0;
 }

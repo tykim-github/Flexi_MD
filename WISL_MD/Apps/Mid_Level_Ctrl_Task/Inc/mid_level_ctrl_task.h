@@ -317,21 +317,63 @@ typedef struct _ImpedanceCtrl {
 
 } ImpedanceCtrl;
 
-typedef struct _ProportionalCtrl {
+typedef struct _SAANCtrl {
 
 	float error;
-	float K_torque;
-	float max_torque;
 	float torque_ref;
+	float torque_proportional;
+	float torque_stiffness;
 	float force_ref;
+	float pmmg_PF;
+	float pmmg_DF;
+	float torque_limit;
 
+	// for proportional
+	float K_PF;
+	float K_DF;
 	float power_PF;
 	float power_DF;
+	float offset_PF;
+	float offset_DF;
 
-	float pmmg_pf;
-	float pmmg_df;
 
-} ProportionalCtrl;
+	// for stiffness
+	float K_stiff;
+	float D_stiff;
+
+	float a_rest_DF;
+	float b_rest_DF;
+	float c_rest_DF;
+	float d_rest_DF;
+
+	float a_cont_DF;
+	float b_cont_DF;
+	float c_cont_DF;
+	float d_cont_DF;
+
+	float a_rest_PF;
+	float b_rest_PF;
+	float c_rest_PF;
+	float d_rest_PF;
+
+	float a_cont_PF;
+	float b_cont_PF;
+	float c_cont_PF;
+	float d_cont_PF;
+
+	float theta_init;
+	float gamma;
+	float gamma_start_threshold;
+	float gamma_stop_threshold;
+
+	float threshold;
+	float theta_prev;
+	float theta_dot_filtered;
+	float theta_dot_lpf_alpha;
+	uint8_t gamma_above_threshold;
+
+
+} SAANCtrl;
 
 typedef struct _WIDM_GaitData {
 	float gaitPhase;			// Current Gait Phase 0 ~ 100%
